@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Puppet Talk</title>
+
+		<meta name="description" content="A framework for easily creating beautiful presentations using HTML">
+		<meta name="author" content="Hakim El Hattab">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="stylesheet" href="css/reveal.min.css">
+		<link rel="stylesheet" href="css/theme/default.css" id="theme">
+
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', use the PDF print sheet -->
+		<script>
+			document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section>
+					<h1>Provision and deploy with Puppet</h1>
+					<h3>@michaelpeacock</h3>
+					<aside class="notes">
+						Hello! I'm going to talk today about using Puppet to provision your servers and deploy your application; so you can go from a bare box to a working application in minutes. We will start by walking through Puppet, and how it works, and then run through building a sample puppet project to setup and deploy a project on a production server.
+					</aside>
+				</section>
+
+				<section>
+					<section>
+						<h2>Puppet Primer</h2>
+						<aside class="notes">
+							Lets start with a puppet primer. Be warned, this contains a mixture of good and bad practices. My self-teaching approach always takes the route of cobble something together that works, wait at least a year, realise how to use the tool properly, slowly re-work it. I'll try and point out the good and the bad.
+						</aside>
+					</section>
+					<section>
+						<h2>Resources</h2>
+						<ul>
+							<li class="fragment"><strong>cron</strong> to install and manage cron jobs</li>
+							<li class="fragment"><strong>exec</strong> to run shell commands</li>
+							<li class="fragment"><strong>user</strong> create and manage user accounts</li>
+							<li class="fragment"><strong>group</strong> create and manage user groups</li>
+							<li class="fragment"><strong>file</strong> create and manage files, their contents, folders and symlinks</li>
+							<li class="fragment"><strong>package</strong> install or remove software packages</li>
+							<li class="fragment"><strong>service</strong> manage running services</li>
+						</ul>
+						<aside class="notes">
+							<p>The different aspects of your server puppet can manage, are referred to as resources; there are many different types of resources, and for aspects where features don't exist, modules can often fill the gaps brilliantly. Some of the key resources we will look at include</p>
+							<ul>
+							<li><strong>cron</strong> to install and manage cron jobs</li>
+							<li><strong>exec</strong> to run shell commands</li>
+							<li><strong>user</strong> create and manage user accounts</li>
+							<li><strong>group</strong> create and manage user groups</li>
+							<li><strong>file</strong> create and manage files, their contents, folders and symlinks</li>
+							<li><strong>package</strong> install or remove software packages</li>
+							<li><strong>service</strong> manage running services</li>
+						</ul>
+						</aside>
+					</section>
+					<section>
+						<h2>Using resources</h2>
+						<pre><code data-trim contenteditable >
+resource_type { 'title':
+	attribute => value,
+	attribute => value
+}
+</code></pre>
+						<pre><code data-trim contenteditable >
+user { 'michael':
+	ensure => "present", # create user if not there
+	gid => "wheel", # use this group
+	password => "somehash"
+}
+</code></pre>
+						<aside class="notes">
+							To use a resource, you specify its type, provide a title, and a set of attribtues. The title is unique and allows other resources to refer to each other; typicall the title doubles as a specific attribute. For example, on an exec it refers to the command you are running, however you can use a more friendly string as the title, and override the command by specifying the command attribute.
+						</aside>
+					</section>
+					<section>
+						<h2>Requirements</h2>
+						<p>You can set one resource to depend on another using the require attribute</p>
+						<ul>
+							<li>Resource type must start with a capital letter</li>
+							<li>Group multiple requirements within []</li>
+							<li>You can even require an entire class of resources</li>
+						</ul>
+						<pre><code data-trim contenteditable >
+user { 'michael':
+	ensure => "present", # create user if not there
+	gid => "wheel", # use this group
+	password => "somehash",
+	require => [Group['wheel'], Class['chump']]
+}
+</code></pre>
+					</section>
+					<section>
+						<h2>Run stages [avoid]</h2>
+
+						<pre><code data-trim contenteditable >
+stage { 'first':
+	before => Stage['main'],
+}
+
+class { 'chump-module':
+	stage => first
+}
+</code></pre>
+
+						<aside class="notes">Either requiring an Exec resource, or an Exec requiring an Exec, has never been reliable for me. Stages are one solution to this. They let you group chunks of your puppet code together, and have certain groups run before the other</aside>
+					</section>
+					<section>
+						<h2>Notify, Subscribe &amp; Refreshonly</h2>
+						<ul>
+							<li><strong>Notify</strong> another resource when this resources runs*</li>
+							<li>Tell this resource to wait (<strong>Subscribe</strong>) for another resource</li>
+							<li>Only run a resource if the resource being subscribed to also runs (<strong>refreshonly</strong>)</li>
+						</ul>
+						<pre><code  data-trim contenteditable>
+service { "nginx":
+	ensure => "running",
+	require => Package["nginx"],
+	subscribe => Service["php5-fpm"]
+}
+</code></pre>
+					</section>
+					<section>
+						<h2>Modules</h2>
+						<p>Typically related, reusable resources, structured in a configurable way.</p>
+<pre><code  data-trim contenteditable>
+modules
+---- mymodule
+---- ---- manifests
+---- ---- ---- init.pp
+---- ---- ---- othermanifests.pp
+---- ---- /files
+---- ---- ---- some-file.txt
+---- ---- /templates
+---- ---- ---- some-template.erb
+</code></pre>
+					</section>
+					<section>
+						<h2>Access a modules files from within the module</h2>
+						<pre><code>file { '/etc/nginx/sites-available/default':
+    source => "puppet:///modules/nginx/config-file",
+    owner => 'root',
+    group => 'root',
+    notify => Service['nginx'],
+    require => Package['nginx']
+ }</code></pre>
+					</section>
+					<section>
+						<h2>Classes [bad]</h2>
+						<pre><code>class mysql {
+
+  package { "mysql-server":
+    ensure => present
+  }
+
+  package { "mysql-client":
+    ensure => present
+  }
+
+  package { "libmysqlclient15-dev":
+    ensure => present
+  }
+
+}</code>/modules/mysql/manifests/init.pp</pre>
+
+<pre><code>import "mysql"
+include mysql</code>manifests/site.pp</pre>
+<aside class="notes">Why is this bad? It provides no options for configuration, also a MySQL module would let us do things with the database server, such as create and manage MySQL users.</aside>
+					</section>
+					<section>
+						<h2>Classes [better]</h2>
+<pre><code>class iptables ($file = 'iptables') {
+    exec { 'load-rules':
+        command => "/sbin/iptables -F && /sbin/iptables-restore < /etc/iptables.up.rules",
+        require => File['/etc/iptables.up.rules'],
+        refreshonly => true
+    }
+
+    file { '/etc/iptables.up.rules':
+        source => "puppet:///modules/iptables/${file}",
+        owner => 'root',
+        group => 'root',
+        notify => Exec['load-rules']
+    }
+
+    file { '/etc/network/if-pre-up.d/iptables':
+        source => 'puppet:///modules/iptables/up',
+        owner => 'root',
+        group => 'root',
+        mode => 755
+    }
+}
+</code>modules/iptables/manifests/init.pp</pre>
+<pre><code>class {
+    'iptables':
+        file => 'external-staging-rules'
+}</code>manifests/site.pp</pre>
+					</section>
+					<section>
+						<h2>Existing modules</h2>
+						<p>Puppet Forge is the online repository of existing Puppet modules; most are well documented, and are on GitHub so you can include them as a submodule for your Puppet project. Make sure you also include dependencies.</p>
+						<p>As with code components, existing modules are a mixed bag and a balancing act; some give you lots of flexibility, others don't - so check that they support your needs</p>
+					</section>
+					<section>
+						<h2>Manifests</h2>
+						<p>There are typically two types of manifest files; ones within modules, of which init.pp is called automatically when the module is invoked, and the manifests which relate to a specific server, and specify the modules which should be used and how they should be used</p>
+					</section>
+				</section>
+
+				<section>
+					<section>
+						<h2>Provision and deploy</h2>
+					</section>
+					<section>
+						<h2>See: sample-project</h2>
+					</section>
+					<section>
+						<h2>Setup puppet</h2>
+					</section>
+					<section>
+						<h2>Provision</h2>
+					</section>
+				</section>
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.min.js"></script>
+
+		<script>
+
+			// Full list of configuration options available here:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+				transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+
+				// Parallax scrolling
+				// parallaxBackgroundImage: 'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg',
+				// parallaxBackgroundSize: '2100px 900px',
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
